@@ -1,15 +1,41 @@
 #include "raylib.h"
 #include <stdio.h>
-#include <stdlib.h> 
+#include <stdlib.h>
 
 #define MAX_FILEPATH_RECORDED 2
 #define MAX_FILE_SIZE 1024
+
+void DrawWaveform(Wave wave, float timePlayed, float duration, int screenWidth, int screenHeight) {
+    if (wave.frameCount == 0 || wave.data == NULL) return;
+
+
+    int samplesPerChannel = wave.frameCount / wave.channels;
+    int visibleSamples = (int)((timePlayed / duration) * samplesPerChannel);
+    if (visibleSamples <= 1) return;
+
+    float centerY = screenHeight / 2.0f;
+    float scale = screenHeight / 2.5f;
+
+    short* samples = (short*)wave.data;
+
+    for (int i = 1; i < visibleSamples; i++) {
+        float x1 = (float)(i - 1) / visibleSamples * screenWidth;
+        float y1 = centerY - samples[(i - 1) * wave.channels] / 32768.0f * scale;
+
+        float x2 = (float)i / visibleSamples * screenWidth;
+        float y2 = centerY - samples[i * wave.channels] / 32768.0f * scale;
+
+        DrawLine((int)x1, (int)y1, (int)x2, (int)y2, DARKBLUE);
+    }
+}
 
 int main(void) {
     const int w_width = 800;
     const int w_height = 450;
 
-    InitWindow(w_width, w_height, "Music Vizulaizer");
+    InitWindow(w_width, w_height, "Music Visualizer");
+    InitAudioDevice();
+    SetTargetFPS(60);
 
     int filepathCounter = 0;
     char* filepath[MAX_FILEPATH_RECORDED] = { 0 };
@@ -22,12 +48,10 @@ int main(void) {
         }
     }
 
-    InitAudioDevice();
-
-    SetTargetFPS(60);
-
-    Sound sound = { 0 };
-    bool soundLoaded = false;
+    Music music = { 0 };
+    Wave wave = { 0 };
+    bool musicLoaded = false;
+    float duration = 0.0f;
 
     while (!WindowShouldClose()) {
         if (IsFileDropped()) {
@@ -40,15 +64,17 @@ int main(void) {
                 TextCopy(filepath[filepathCounter], droppedFiles.paths[0]);
 
                 if (FileExists(filepath[filepathCounter])) {
-                    sound = LoadSound(filepath[filepathCounter]);
+                    music = LoadMusicStream(filepath[filepathCounter]);
+                    wave = LoadWave(filepath[filepathCounter]);
+                    duration = GetMusicTimeLength(music);
 
-                    if (sound.frameCount == 0) {
-                        printf("ERROR: Failed to load sound from %s\n", filepath[filepathCounter]);
+                    if (wave.frameCount == 0) {
+                        printf("ERROR: Failed to load music from %s\n", filepath[filepathCounter]);
                     }
                     else {
-                        printf("SUCCESS: Loaded sound: %s\n", filepath[filepathCounter]);
-                        PlaySound(sound);
-                        soundLoaded = true;
+                        printf("SUCCESS: Loaded music: %s\n", filepath[filepathCounter]);
+                        PlayMusicStream(music);
+                        musicLoaded = true;
                     }
 
                     filepathCounter++;
@@ -61,6 +87,10 @@ int main(void) {
             UnloadDroppedFiles(droppedFiles);
         }
 
+        if (musicLoaded) {
+            UpdateMusicStream(music);
+        }
+
         BeginDrawing();
         ClearBackground(LIGHTGRAY);
 
@@ -68,22 +98,28 @@ int main(void) {
             DrawText("Drag and drop your music file here", 100, 40, 20, BLACK);
         }
         else {
-            DrawText("File dropped. Playing sound...", 100, 40, 20, BLACK);
+            DrawText("File dropped. Playing music...", 100, 40, 20, BLACK);
+
+            if (musicLoaded) {
+                float timePlayed = GetMusicTimePlayed(music);
+                DrawWaveform(wave, timePlayed, duration, w_width, w_height);
+            }
         }
 
         EndDrawing();
     }
 
-    if (soundLoaded) {
-        UnloadSound(sound);
+    if (musicLoaded) {
+        UnloadMusicStream(music);
+        UnloadWave(wave);
     }
 
     CloseAudioDevice();
+    CloseWindow();
 
     for (int i = 0; i < MAX_FILEPATH_RECORDED; i++) {
         free(filepath[i]);
     }
 
-    CloseWindow();
     return 0;
 }
